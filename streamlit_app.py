@@ -1,151 +1,60 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# Set Streamlit page config
+st.set_page_config(page_title="HR Analytics Dashboard", layout="wide")
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# Title
+st.title("HR Analytics Dashboard")
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+# File Upload
+uploaded_file = st.file_uploader("Upload HR Dataset (CSV)", type=["csv"])
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
-
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
-
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
-
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.write("### Data Preview")
+    st.dataframe(df.head())
+    
+    # Select Key Columns
+    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+    categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+    
+    # Sidebar Filters
+    st.sidebar.header("Filters")
+    selected_department = st.sidebar.selectbox("Select Department", ["All"] + df['Department'].unique().tolist()) if 'Department' in df.columns else None
+    
+    # Apply Department Filter
+    if selected_department and selected_department != "All":
+        df = df[df['Department'] == selected_department]
+    
+    # Employee Turnover Visualization
+    if 'Attrition' in df.columns:
+        st.write("### Employee Attrition")
+        fig, ax = plt.subplots()
+        sns.countplot(data=df, x='Attrition', ax=ax, palette='coolwarm')
+        st.pyplot(fig)
+    
+    # Department-wise Distribution
+    if 'Department' in df.columns:
+        st.write("### Department-wise Distribution")
+        fig, ax = plt.subplots()
+        sns.countplot(data=df, y='Department', order=df['Department'].value_counts().index, palette='viridis')
+        st.pyplot(fig)
+    
+    # Salary Distribution
+    if 'MonthlyIncome' in df.columns:
+        st.write("### Salary Distribution")
+        fig, ax = plt.subplots()
+        sns.histplot(df['MonthlyIncome'], bins=30, kde=True, ax=ax)
+        st.pyplot(fig)
+    
+    # Correlation Heatmap
+    if numeric_cols:
+        st.write("### Correlation Heatmap")
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sns.heatmap(df[numeric_cols].corr(), annot=True, cmap='coolwarm', fmt='.2f', ax=ax)
+        st.pyplot(fig)
+else:
+    st.info("Please upload a CSV file to proceed.")
